@@ -14,7 +14,7 @@ import torch
 from .upstream import PROJECT_ROOT, UPSTREAM_ROOT, ensure_upstream_imports
 
 
-Method = Literal["baseline", "gt_guided_aux"]
+Method = Literal["baseline", "gt_guided_aux", "bqr_dn_v2"]
 Precision = Literal["fp32", "fp16", "bf16"]
 VOC_CLASSES = (
     "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car",
@@ -72,11 +72,17 @@ class ExperimentConfig:
     aux_giou_coef: float = 2.0
     sampling_points_per_level: int = 4
 
+    # BQR-DN V2 replaces only the content of DINO's training-time DN queries.
+    bqr_enabled: bool = True
+    bqr_dn_weight: float = 1.0
+    bqr_points_per_level: int = 4
+    bqr_gate_bias: float = -2.0
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "data_root", Path(self.data_root).resolve())
         object.__setattr__(self, "output_root", Path(self.output_root).resolve())
         object.__setattr__(self, "torch_cache", Path(self.torch_cache).resolve())
-        if self.method not in ("baseline", "gt_guided_aux"):
+        if self.method not in ("baseline", "gt_guided_aux", "bqr_dn_v2"):
             raise ValueError(f"Unknown method: {self.method}")
         if self.precision not in ("fp32", "fp16", "bf16"):
             raise ValueError(f"Unknown precision: {self.precision}")
@@ -89,6 +95,8 @@ class ExperimentConfig:
             "backbone_lr": self.backbone_lr,
             "num_queries": self.num_queries,
             "sampling_points_per_level": self.sampling_points_per_level,
+            "bqr_points_per_level": self.bqr_points_per_level,
+            "bqr_dn_weight": self.bqr_dn_weight,
         }
         invalid = [name for name, value in positive.items() if value <= 0]
         if invalid:

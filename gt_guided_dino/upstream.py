@@ -6,6 +6,7 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 UPSTREAM_ROOT = PROJECT_ROOT / "third_party" / "dino"
+DQR_V2_ROOT = PROJECT_ROOT / "dqr-v2"
 
 
 def ensure_upstream_imports() -> Path:
@@ -21,3 +22,12 @@ def ensure_upstream_imports() -> Path:
 def upstream_commit() -> str:
     return (UPSTREAM_ROOT / "UPSTREAM_COMMIT").read_text(encoding="ascii").strip()
 
+
+def ensure_dqr_v2_imports() -> Path:
+    marker = DQR_V2_ROOT / "dqr_v2" / "model.py"
+    if not marker.is_file():
+        raise RuntimeError(f"Missing BQR-DN V2 package: {DQR_V2_ROOT}")
+    path = str(DQR_V2_ROOT)
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    return DQR_V2_ROOT

@@ -8,7 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .config import ExperimentConfig
-from .upstream import ensure_upstream_imports
+from .upstream import ensure_dqr_v2_imports, ensure_upstream_imports
 
 
 ensure_upstream_imports()
@@ -191,6 +191,7 @@ class ResearchModel(nn.Module):
         self.detector = detector
         self.method = config.method
         self.auxiliary = None
+        self.bqr_bridge = None
         self._capture_enabled = False
         self._encoder_cache: dict[str, torch.Tensor] = {}
         self._decoder_hidden: torch.Tensor | None = None
@@ -215,6 +216,14 @@ class ResearchModel(nn.Module):
             self._hook_handles.append(
                 detector.transformer.decoder.register_forward_hook(self._capture_decoder)
             )
+        elif config.method == "bqr_dn_v2":
+            ensure_dqr_v2_imports()
+            from dqr_v2 import attach_bqr_dn_v2
+
+            cuda_devices = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+            with torch.random.fork_rng(devices=cuda_devices):
+                torch.manual_seed(config.seed + 2_000_003)
+                self.bqr_bridge = attach_bqr_dn_v2(detector, config)
 
     def _capture_encoder(self, module, args, kwargs, output) -> None:
         del module, args
@@ -240,7 +249,13 @@ class ResearchModel(nn.Module):
         self._encoder_cache = {}
         self._decoder_hidden = None
         self._query_features = None
-        outputs = self.detector(samples, targets)
+        if self.bqr_bridge is not None:
+            self.bqr_bridge.set_targets(targets if self.training else None)
+        try:
+            outputs = self.detector(samples, targets)
+        finally:
+            if self.bqr_bridge is not None:
+                self.bqr_bridge.clear_targets()
         if self._capture_enabled:
             if not self._encoder_cache or self._decoder_hidden is None:
                 raise RuntimeError("DINO encoder/decoder features were not captured")
@@ -249,6 +264,11 @@ class ResearchModel(nn.Module):
             if self._query_features.shape[1] != outputs["pred_boxes"].shape[1]:
                 raise RuntimeError("Captured decoder queries do not align with DINO predictions")
         return outputs
+
+    def training_diagnostics(self) -> dict[str, torch.Tensor]:
+        if self.bqr_bridge is None:
+            return {}
+        return dict(self.bqr_bridge.latest_diagnostics)
 
     def auxiliary_losses(
         self,

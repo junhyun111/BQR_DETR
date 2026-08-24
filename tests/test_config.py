@@ -17,3 +17,11 @@ def test_smoke_recipe_is_valid():
     assert config.lr_drop_epoch == 1
     assert config.num_queries == 20
     assert config.hidden_dim == 256
+
+
+def test_bqr_dn_v2_recipe_is_valid():
+    config = smoke_config(method="bqr_dn_v2")
+    assert config.method == "bqr_dn_v2"
+    assert config.dn_number > 0
+    assert config.bqr_points_per_level == 4
+    assert config.bqr_dn_weight == 1.0

@@ -108,6 +108,9 @@ def train(
         for name in (
             "loss_ce", "loss_bbox", "loss_giou", "loss_aux_bbox", "loss_aux_giou",
             "aux_gate_mean", "aux_offset_abs_mean", "aux_attention_entropy",
+            "loss_ce_dn", "loss_bbox_dn", "loss_giou_dn",
+            "bqr_valid_queries", "bqr_gate_mean", "bqr_offset_abs_mean",
+            "bqr_attention_entropy", "bqr_region_norm", "bqr_fusion_delta_norm",
         ):
             if name in totals:
                 row[name] = totals[name] / max(batches, 1)

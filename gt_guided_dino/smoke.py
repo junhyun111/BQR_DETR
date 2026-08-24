@@ -33,6 +33,7 @@ def run_smoke(method: str = "gt_guided_aux", device_name: str | None = None) -> 
         "queries": int(outputs["pred_boxes"].shape[1]),
         "finite": bool(torch.isfinite(total)),
         "aux_matches": float(losses.get("aux_matches", torch.tensor(0.0))),
+        "bqr_valid_queries": float(losses.get("bqr_valid_queries", torch.tensor(0.0))),
     }
     model.close()
     return result
@@ -78,6 +79,7 @@ def run_official_shape_smoke(method: str = "gt_guided_aux", image_size: int = 25
         "finite": bool(torch.isfinite(total)),
         "peak_cuda_mb": torch.cuda.max_memory_allocated(device) / 2**20,
         "aux_matches": float(losses.get("aux_matches", torch.tensor(0.0))),
+        "bqr_valid_queries": float(losses.get("bqr_valid_queries", torch.tensor(0.0))),
     }
     model.close()
     return result
