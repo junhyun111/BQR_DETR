@@ -1,0 +1,11 @@
+.venv/
+.uv-cache/
+.uv-python/
+.pytest_cache/
+.pytest-tmp/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+artifacts/
+weights/
+VOC2007/
