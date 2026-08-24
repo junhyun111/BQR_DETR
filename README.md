@@ -23,6 +23,10 @@ installed, the model automatically uses the differentiable PyTorch fallback.
 
 - `notebooks/01_train.ipynb`: train or resume either method.
 - `notebooks/02_evaluate.ipynb`: VOC2007 11-point mAP@0.5 evaluation and plots.
+- `notebooks/03_compare.ipynb`: compare AP/AP50/AP75, object-size AP/AR,
+  per-class AP, loss curves and run cost.
+- `notebooks/03-1_compare_localization.ipynb`: class-score-free validation
+  localization comparison (matched IoU/GIoU, L1, centre and size errors).
 
 The default recipe uses 1,000 deterministic images from the official VOC2007
 train split, the full 2,510-image validation split, 12 epochs, and an LR drop at
