@@ -1,0 +1,10 @@
+.env
+artifacts/
+torch-cache/
+.pytest_cache/
+.pytest-tmp/
+**/__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+third_party/dino/models/dino/ops/build/

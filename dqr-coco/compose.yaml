@@ -1,0 +1,100 @@
+services:
+  train:
+    build:
+      context: ..
+      dockerfile: dqr-coco/Dockerfile
+      args:
+        PYTORCH_IMAGE: ${PYTORCH_IMAGE:-pytorch/pytorch:2.1.2-cuda12.1-cudnn8-devel}
+        TORCH_CUDA_ARCH_LIST: ${TORCH_CUDA_ARCH_LIST:-8.9}
+    image: dqr-dino-coco:latest
+    init: true
+    shm_size: 32gb
+    environment:
+      TORCH_HOME: /workspace/torch-cache
+      NVIDIA_VISIBLE_DEVICES: ${GPU_IDS:-0,1}
+    volumes:
+      - ${COCO_ROOT:?Set COCO_ROOT to the NVMe COCO directory}:/workspace/data/coco:ro
+      - ${OUTPUT_ROOT:-./artifacts}:/workspace/artifacts
+      - ${TORCH_CACHE:-./torch-cache}:/workspace/torch-cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command:
+      - torchrun
+      - --standalone
+      - --nproc_per_node=${NPROC_PER_NODE:-2}
+      - dqr-coco/train.py
+      - --method
+      - ${METHOD:-bqr_dn_v2}
+      - --data-root
+      - /workspace/data/coco
+      - --output-root
+      - /workspace/artifacts
+      - --torch-cache
+      - /workspace/torch-cache
+      - --run-name
+      - ${RUN_NAME:-}
+      - --epochs
+      - ${EPOCHS:-12}
+      - --batch-size
+      - ${BATCH_SIZE:-2}
+      - --accumulation-steps
+      - ${ACCUMULATION_STEPS:-4}
+      - --target-global-batch-size
+      - ${TARGET_GLOBAL_BATCH_SIZE:-16}
+      - --eval-batch-size
+      - ${EVAL_BATCH_SIZE:-2}
+      - --num-workers
+      - ${NUM_WORKERS:-8}
+      - --precision
+      - ${PRECISION:-fp16}
+      - --diagnostics-every
+      - ${DIAGNOSTICS_EVERY:-100}
+      - --seed
+      - ${SEED:-42}
+      - --resume
+      - ${RESUME:-auto}
+
+  evaluate:
+    profiles: [evaluation]
+    build:
+      context: ..
+      dockerfile: dqr-coco/Dockerfile
+      args:
+        PYTORCH_IMAGE: ${PYTORCH_IMAGE:-pytorch/pytorch:2.1.2-cuda12.1-cudnn8-devel}
+        TORCH_CUDA_ARCH_LIST: ${TORCH_CUDA_ARCH_LIST:-8.9}
+    image: dqr-dino-coco:latest
+    init: true
+    shm_size: 32gb
+    environment:
+      TORCH_HOME: /workspace/torch-cache
+      NVIDIA_VISIBLE_DEVICES: ${GPU_IDS:-0,1}
+    volumes:
+      - ${COCO_ROOT:?Set COCO_ROOT to the NVMe COCO directory}:/workspace/data/coco:ro
+      - ${OUTPUT_ROOT:-./artifacts}:/workspace/artifacts
+      - ${TORCH_CACHE:-./torch-cache}:/workspace/torch-cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command:
+      - torchrun
+      - --standalone
+      - --nproc_per_node=${NPROC_PER_NODE:-2}
+      - dqr-coco/evaluate.py
+      - ${CHECKPOINT:-/workspace/artifacts/checkpoint.pt}
+      - --data-root
+      - /workspace/data/coco
+      - --batch-size
+      - ${EVAL_BATCH_SIZE:-2}
+      - --num-workers
+      - ${NUM_WORKERS:-8}
+      - --precision
+      - ${INFERENCE_PRECISION:-fp16}

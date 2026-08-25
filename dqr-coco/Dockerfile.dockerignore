@@ -1,0 +1,10 @@
+**
+!dqr-coco/
+!dqr-coco/**
+!third_party/
+!third_party/dino/
+!third_party/dino/**
+!THIRD_PARTY_NOTICES.md
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
