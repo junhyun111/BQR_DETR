@@ -22,6 +22,28 @@ def _autocast_dtype(precision: str):
     return torch.float16 if precision == "fp16" else torch.bfloat16
 
 
+def _weighted_loss_contributions(criterion, losses: dict[str, torch.Tensor]) -> dict[str, float]:
+    """Group all weighted decoder and DN terms by objective for logging."""
+    grouped = {
+        "weighted_ce_total": 0.0,
+        "weighted_bbox_total": 0.0,
+        "weighted_giou_total": 0.0,
+    }
+    for name, weight in criterion.weight_dict.items():
+        if name not in losses:
+            continue
+        if name.startswith("loss_ce"):
+            key = "weighted_ce_total"
+        elif name.startswith("loss_bbox"):
+            key = "weighted_bbox_total"
+        elif name.startswith("loss_giou"):
+            key = "weighted_giou_total"
+        else:
+            continue
+        grouped[key] += float(losses[name].detach() * weight)
+    return grouped
+
+
 def train(
     config: ExperimentConfig,
     *,
@@ -87,6 +109,8 @@ def train(
 
             batches += 1
             totals["loss"] = totals.get("loss", 0.0) + float(loss.detach())
+            for name, value in _weighted_loss_contributions(criterion, loss_dict).items():
+                totals[name] = totals.get(name, 0.0) + value
             for name, value in loss_dict.items():
                 if torch.is_tensor(value) and value.numel() == 1:
                     totals[name] = totals.get(name, 0.0) + float(value.detach())
@@ -111,9 +135,25 @@ def train(
             "loss_ce_dn", "loss_bbox_dn", "loss_giou_dn",
             "bqr_valid_queries", "bqr_gate_mean", "bqr_offset_abs_mean",
             "bqr_attention_entropy", "bqr_region_norm", "bqr_fusion_delta_norm",
+            "bqr_content_scale", "bqr_prior_entropy", "bqr_final_entropy",
+            "bqr_content_logit_std", "bqr_top1_attention",
+            "weighted_ce_total", "weighted_bbox_total", "weighted_giou_total",
         ):
             if name in totals:
                 row[name] = totals[name] / max(batches, 1)
+        for size_name in ("small", "medium", "large"):
+            count_key = f"bqr_{size_name}_queries"
+            count = totals.get(count_key, 0.0)
+            row[count_key] = count
+            if count <= 0:
+                continue
+            for metric in (
+                "prior_entropy", "final_entropy", "top1_attention",
+                "gate_mean", "fusion_delta_norm", "offset_abs_mean",
+            ):
+                sum_key = f"bqr_{size_name}_{metric}_sum"
+                if sum_key in totals:
+                    row[f"bqr_{size_name}_{metric}"] = totals[sum_key] / count
         history.append(row)
         save_checkpoint(
             config,

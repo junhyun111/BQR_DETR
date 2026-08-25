@@ -18,7 +18,7 @@ class ResearchCriterion(nn.Module):
                     "loss_aux_giou": config.aux_weight * config.aux_giou_coef,
                 }
             )
-        elif config.method == "bqr_dn_v2" and config.bqr_dn_weight != 1.0:
+        elif config.method in ("bqr_dn_v2", "bqr_dn_v2_1") and config.bqr_dn_weight != 1.0:
             for name in tuple(self.weight_dict):
                 if "_dn" in name:
                     self.weight_dict[name] *= config.bqr_dn_weight

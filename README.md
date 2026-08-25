@@ -4,7 +4,9 @@ The research comparison keeps the official DINO R50 4-scale detector identical
 between methods. `gt_guided_aux` adds only a training-time query-aligned spatial
 sampling and auxiliary box-regression path. `bqr_dn_v2` instead enriches the
 official noisy DN query content with noisy-box region evidence before the
-shared decoder. Inference uses the normal DINO path for every method.
+shared decoder. `bqr_dn_v2_1` retains V2 and makes its region attention depend
+on both the DN query and the actually sampled encoder features. Inference uses
+the normal DINO path for every method.
 
 ## Environment
 
@@ -25,6 +27,7 @@ installed, the model automatically uses the differentiable PyTorch fallback.
 
 - `notebooks/01_train.ipynb`: train or resume either method.
 - `notebooks/01-1_trainV2.ipynb`: train or resume BQR-DN V2.
+- `notebooks/01-2_train.ipynb`: train or resume content-aware BQR-DN V2.1.
 - `notebooks/02_evaluate.ipynb`: VOC2007 11-point mAP@0.5 evaluation and plots.
 - `notebooks/03_compare.ipynb`: compare AP/AP50/AP75, object-size AP/AR,
   per-class AP, loss curves and run cost.
@@ -32,9 +35,9 @@ installed, the model automatically uses the differentiable PyTorch fallback.
   localization comparison (matched IoU/GIoU, L1, centre and size errors).
 
 The method keys accepted by the shared Python pipeline are `baseline`,
-`gt_guided_aux`, and `bqr_dn_v2`. BQR-DN V2 implementation code lives under
-`dqr-v2/dqr_v2`; its checkpoints are written to
-`artifacts/bqr_dn_v2/seed_42`.
+`gt_guided_aux`, `bqr_dn_v2`, and `bqr_dn_v2_1`. BQR-DN implementations live
+under `dqr-v2/dqr_v2` and `dqr-v2.1/dqr_v2_1`; V2.1 checkpoints are written to
+`artifacts/bqr_dn_v2_1/seed_42`.
 
 The default recipe uses 1,000 deterministic images from the official VOC2007
 train split, the full 2,510-image validation split, 12 epochs, and an LR drop at

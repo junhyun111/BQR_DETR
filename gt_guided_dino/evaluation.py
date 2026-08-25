@@ -87,7 +87,10 @@ def evaluate_checkpoint(
         device,
         precision=precision,
     )
-    output_path = config.run_dir / "evaluation.json"
+    # A limited validation pass is a diagnostic and must never replace the
+    # full-validation cache consumed by the comparison notebooks.
+    suffix = "" if val_limit is None else f"_val{val_limit}"
+    output_path = config.run_dir / f"evaluation{suffix}.json"
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(json.dumps(result, indent=2), encoding="utf-8")
     model.close()

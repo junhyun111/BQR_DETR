@@ -25,3 +25,12 @@ def test_bqr_dn_v2_recipe_is_valid():
     assert config.dn_number > 0
     assert config.bqr_points_per_level == 4
     assert config.bqr_dn_weight == 1.0
+
+
+def test_bqr_dn_v2_1_recipe_is_valid():
+    config = smoke_config(method="bqr_dn_v2_1")
+    assert config.method == "bqr_dn_v2_1"
+    assert config.bqr_content_attention
+    assert config.bqr_attention_dim == 64
+    assert config.bqr_content_scale_init == 0.05
+    assert config.bqr_attention_temperature == 1.0

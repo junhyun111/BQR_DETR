@@ -14,7 +14,7 @@ import torch
 from .upstream import PROJECT_ROOT, UPSTREAM_ROOT, ensure_upstream_imports
 
 
-Method = Literal["baseline", "gt_guided_aux", "bqr_dn_v2"]
+Method = Literal["baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1"]
 Precision = Literal["fp32", "fp16", "bf16"]
 VOC_CLASSES = (
     "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car",
@@ -78,11 +78,17 @@ class ExperimentConfig:
     bqr_points_per_level: int = 4
     bqr_gate_bias: float = -2.0
 
+    # BQR-DN V2.1 adds sampled-feature-aware attention to the V2 prior.
+    bqr_content_attention: bool = True
+    bqr_attention_dim: int = 64
+    bqr_content_scale_init: float = 0.05
+    bqr_attention_temperature: float = 1.0
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "data_root", Path(self.data_root).resolve())
         object.__setattr__(self, "output_root", Path(self.output_root).resolve())
         object.__setattr__(self, "torch_cache", Path(self.torch_cache).resolve())
-        if self.method not in ("baseline", "gt_guided_aux", "bqr_dn_v2"):
+        if self.method not in ("baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1"):
             raise ValueError(f"Unknown method: {self.method}")
         if self.precision not in ("fp32", "fp16", "bf16"):
             raise ValueError(f"Unknown precision: {self.precision}")
@@ -97,6 +103,8 @@ class ExperimentConfig:
             "sampling_points_per_level": self.sampling_points_per_level,
             "bqr_points_per_level": self.bqr_points_per_level,
             "bqr_dn_weight": self.bqr_dn_weight,
+            "bqr_attention_dim": self.bqr_attention_dim,
+            "bqr_attention_temperature": self.bqr_attention_temperature,
         }
         invalid = [name for name, value in positive.items() if value <= 0]
         if invalid:
@@ -105,6 +113,8 @@ class ExperimentConfig:
             raise ValueError("num_workers must be non-negative")
         if self.val_limit is not None and self.val_limit <= 0:
             raise ValueError("val_limit must be positive when set")
+        if not 0.0 < self.bqr_content_scale_init < 1.0:
+            raise ValueError("bqr_content_scale_init must be strictly between 0 and 1")
         if self.lr_drop_epoch >= self.epochs:
             raise ValueError("lr_drop_epoch must be earlier than the final epoch")
 
