@@ -137,6 +137,9 @@ def train(
             "bqr_attention_entropy", "bqr_region_norm", "bqr_fusion_delta_norm",
             "bqr_content_scale", "bqr_prior_entropy", "bqr_final_entropy",
             "bqr_content_logit_std", "bqr_top1_attention",
+            "bqr_query_attention_entropy", "bqr_final_attention_entropy",
+            "bqr_scale_prior_entropy", "bqr_scale_logit_span",
+            "bqr_center_attention",
             "weighted_ce_total", "weighted_bbox_total", "weighted_giou_total",
         ):
             if name in totals:
@@ -150,10 +153,18 @@ def train(
             for metric in (
                 "prior_entropy", "final_entropy", "top1_attention",
                 "gate_mean", "fusion_delta_norm", "offset_abs_mean",
+                "query_attention_entropy", "final_attention_entropy",
+                "scale_prior_entropy", "scale_logit_span", "center_attention",
             ):
                 sum_key = f"bqr_{size_name}_{metric}_sum"
                 if sum_key in totals:
                     row[f"bqr_{size_name}_{metric}"] = totals[sum_key] / count
+            for level in range(config.num_feature_levels):
+                sum_key = f"bqr_{size_name}_level_{level}_attention_sum"
+                if sum_key in totals:
+                    row[f"bqr_{size_name}_level_{level}_attention"] = (
+                        totals[sum_key] / count
+                    )
         history.append(row)
         save_checkpoint(
             config,

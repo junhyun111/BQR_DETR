@@ -14,7 +14,9 @@ import torch
 from .upstream import PROJECT_ROOT, UPSTREAM_ROOT, ensure_upstream_imports
 
 
-Method = Literal["baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1"]
+Method = Literal[
+    "baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1", "bqr_dn_v3"
+]
 Precision = Literal["fp32", "fp16", "bf16"]
 VOC_CLASSES = (
     "aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car",
@@ -75,7 +77,8 @@ class ExperimentConfig:
     # BQR-DN V2 replaces only the content of DINO's training-time DN queries.
     bqr_enabled: bool = True
     bqr_dn_weight: float = 1.0
-    bqr_points_per_level: int = 4
+    # V2/V2.1 resolve this to 4, while V3 resolves it to 5.
+    bqr_points_per_level: int | None = None
     bqr_gate_bias: float = -2.0
 
     # BQR-DN V2.1 adds sampled-feature-aware attention to the V2 prior.
@@ -84,11 +87,26 @@ class ExperimentConfig:
     bqr_content_scale_init: float = 0.05
     bqr_attention_temperature: float = 1.0
 
+    # BQR-DN V3 adds a parameter-free scale prior to five-point sampling.
+    bqr_scale_aware: bool = True
+    bqr_target_cells: float = 4.0
+    bqr_scale_sigma: float = 0.8
+    bqr_scale_weight: float = 1.0
+    bqr_scale_logit_floor: float = -4.0
+
     def __post_init__(self) -> None:
         object.__setattr__(self, "data_root", Path(self.data_root).resolve())
         object.__setattr__(self, "output_root", Path(self.output_root).resolve())
         object.__setattr__(self, "torch_cache", Path(self.torch_cache).resolve())
-        if self.method not in ("baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1"):
+        if self.bqr_points_per_level is None:
+            object.__setattr__(
+                self,
+                "bqr_points_per_level",
+                5 if self.method == "bqr_dn_v3" else 4,
+            )
+        if self.method not in (
+            "baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1", "bqr_dn_v3"
+        ):
             raise ValueError(f"Unknown method: {self.method}")
         if self.precision not in ("fp32", "fp16", "bf16"):
             raise ValueError(f"Unknown precision: {self.precision}")
@@ -105,6 +123,8 @@ class ExperimentConfig:
             "bqr_dn_weight": self.bqr_dn_weight,
             "bqr_attention_dim": self.bqr_attention_dim,
             "bqr_attention_temperature": self.bqr_attention_temperature,
+            "bqr_target_cells": self.bqr_target_cells,
+            "bqr_scale_sigma": self.bqr_scale_sigma,
         }
         invalid = [name for name, value in positive.items() if value <= 0]
         if invalid:
@@ -115,6 +135,15 @@ class ExperimentConfig:
             raise ValueError("val_limit must be positive when set")
         if not 0.0 < self.bqr_content_scale_init < 1.0:
             raise ValueError("bqr_content_scale_init must be strictly between 0 and 1")
+        if self.bqr_scale_weight < 0:
+            raise ValueError("bqr_scale_weight must be non-negative")
+        if self.bqr_scale_logit_floor > 0:
+            raise ValueError("bqr_scale_logit_floor must be non-positive")
+        if self.method == "bqr_dn_v3":
+            if self.num_feature_levels != 4:
+                raise ValueError("BQR-DN V3 requires num_feature_levels=4")
+            if self.bqr_points_per_level != 5:
+                raise ValueError("BQR-DN V3 requires bqr_points_per_level=5")
         if self.lr_drop_epoch >= self.epochs:
             raise ValueError("lr_drop_epoch must be earlier than the final epoch")
 

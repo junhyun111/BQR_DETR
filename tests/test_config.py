@@ -1,3 +1,5 @@
+import pytest
+
 from gt_guided_dino.config import ExperimentConfig, smoke_config
 
 
@@ -34,3 +36,20 @@ def test_bqr_dn_v2_1_recipe_is_valid():
     assert config.bqr_attention_dim == 64
     assert config.bqr_content_scale_init == 0.05
     assert config.bqr_attention_temperature == 1.0
+
+
+def test_bqr_dn_v3_recipe_is_four_scale_and_five_point():
+    config = smoke_config(method="bqr_dn_v3")
+    assert config.method == "bqr_dn_v3"
+    assert config.num_feature_levels == 4
+    assert config.bqr_points_per_level == 5
+    assert config.bqr_scale_aware
+    assert config.bqr_target_cells == 4.0
+    assert config.bqr_scale_sigma == 0.8
+    assert config.bqr_scale_weight == 1.0
+    assert config.bqr_scale_logit_floor == -4.0
+
+
+def test_bqr_dn_v3_rejects_non_five_point_configuration():
+    with pytest.raises(ValueError, match="requires bqr_points_per_level=5"):
+        smoke_config(method="bqr_dn_v3", bqr_points_per_level=4)
