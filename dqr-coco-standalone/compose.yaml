@@ -6,23 +6,27 @@ services:
       args:
         PYTORCH_IMAGE: ${PYTORCH_IMAGE:-pytorch/pytorch:2.1.2-cuda12.1-cudnn8-devel}
         TORCH_CUDA_ARCH_LIST: ${TORCH_CUDA_ARCH_LIST:-8.9}
+
     image: dqr-dino-coco:latest
     init: true
     shm_size: 32gb
+
     environment:
       TORCH_HOME: /workspace/torch-cache
-      NVIDIA_VISIBLE_DEVICES: ${GPU_IDS:-0,1}
+
     volumes:
-      - ${COCO_ROOT:?Set COCO_ROOT to the NVMe COCO directory}:/workspace/data/coco:ro
+      - ${COCO_ROOT:?Set COCO_ROOT to the COCO directory}:/workspace/data/coco:ro
       - ${OUTPUT_ROOT:-./artifacts}:/workspace/artifacts
       - ${TORCH_CACHE:-./torch-cache}:/workspace/torch-cache
+
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              device_ids: ["8", "9"]
               capabilities: [gpu]
+
     command:
       - torchrun
       - --standalone
@@ -60,30 +64,36 @@ services:
       - ${RESUME:-auto}
 
   evaluate:
-    profiles: [evaluation]
+    profiles:
+      - evaluation
+
     build:
       context: .
       dockerfile: Dockerfile
       args:
         PYTORCH_IMAGE: ${PYTORCH_IMAGE:-pytorch/pytorch:2.1.2-cuda12.1-cudnn8-devel}
         TORCH_CUDA_ARCH_LIST: ${TORCH_CUDA_ARCH_LIST:-8.9}
+
     image: dqr-dino-coco:latest
     init: true
     shm_size: 32gb
+
     environment:
       TORCH_HOME: /workspace/torch-cache
-      NVIDIA_VISIBLE_DEVICES: ${GPU_IDS:-0,1}
+
     volumes:
-      - ${COCO_ROOT:?Set COCO_ROOT to the NVMe COCO directory}:/workspace/data/coco:ro
+      - ${COCO_ROOT:?Set COCO_ROOT to the COCO directory}:/workspace/data/coco:ro
       - ${OUTPUT_ROOT:-./artifacts}:/workspace/artifacts
       - ${TORCH_CACHE:-./torch-cache}:/workspace/torch-cache
+
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
-              count: all
+              device_ids: ["8", "9"]
               capabilities: [gpu]
+
     command:
       - torchrun
       - --standalone
