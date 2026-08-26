@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import math
 import sys
 import time
 from contextlib import nullcontext
+from itertools import islice
 
 import torch
 from torch.nn.parallel import DistributedDataParallel
@@ -19,9 +19,10 @@ from .data import DataBundle, move_batch
 from .distributed import (
     DistributedContext,
     all_gather_objects,
+    all_reduce_sum,
     unwrap_model,
 )
-from .evaluation import evaluate
+from .evaluation import _float_tree, evaluate
 from .logging_utils import (
     append_jsonl,
     write_run_metadata,
@@ -93,11 +94,10 @@ def _weighted_loss(
 
 class EpochAccumulator:
     """
-    Store only the metrics actually needed for experiment analysis.
+    Keep scalar metrics on GPU during the epoch and transfer them
+    to CPU only once at epoch end.
 
-    Scalars stay on GPU during the epoch and are transferred to CPU
-    once at epoch end. This avoids .item() synchronization for every
-    individual loss on every micro-batch.
+    No computation graph is retained because every value is detached.
     """
 
     def __init__(self) -> None:
@@ -164,9 +164,7 @@ class EpochAccumulator:
         dict[str, float],
         dict[str, int],
     ]:
-        names = sorted(
-            self.sums
-        )
+        names = sorted(self.sums)
 
         if names:
             packed = torch.stack(
@@ -176,7 +174,6 @@ class EpochAccumulator:
                 ]
             )
 
-            # Single synchronization for metric transfer.
             values = packed.cpu().tolist()
         else:
             values = []
@@ -240,9 +237,7 @@ def _finalize_train_metrics(
     row: dict[str, float] = {}
 
     for name, total in sums.items():
-        if name.startswith(
-            "diag_"
-        ):
+        if name.startswith("diag_"):
             continue
 
         count = counts.get(
@@ -283,13 +278,9 @@ def _finalize_train_metrics(
                 / valid
             )
         else:
-            row[output_name] = (
-                float("nan")
-            )
+            row[output_name] = float("nan")
 
-    row[
-        "bqr_valid_queries"
-    ] = valid
+    row["bqr_valid_queries"] = valid
 
     for size_name in (
         "small",
@@ -387,8 +378,8 @@ def _selected_loss_metrics(
     total_loss: torch.Tensor,
 ) -> dict[str, torch.Tensor]:
     """
-    Avoid launching dozens of tiny accumulation kernels for every
-    auxiliary loss. Keep the metrics needed for comparison/analysis.
+    Store only the main comparison losses instead of every auxiliary
+    decoder loss.
     """
 
     raw: dict[str, torch.Tensor] = {
@@ -406,9 +397,7 @@ def _selected_loss_metrics(
     )
 
     for name in selected:
-        value = losses.get(
-            name
-        )
+        value = losses.get(name)
 
         if (
             value is not None
@@ -422,9 +411,7 @@ def _selected_loss_metrics(
                     f"weighted_{name}"
                 ] = (
                     value
-                    * criterion.weight_dict[
-                        name
-                    ]
+                    * criterion.weight_dict[name]
                 )
 
     return raw
@@ -469,7 +456,6 @@ def train_one_epoch(
             context.device
         )
 
-        # Synchronize only at the epoch timing boundary.
         torch.cuda.synchronize(
             context.device
         )
@@ -489,25 +475,16 @@ def train_one_epoch(
         data.train_loader
     )
 
-    # Only complete accumulation windows are used.
+    # Only complete virtual global batches are optimized.
     #
-    # batch 4, accumulation 4:
-    # every optimizer update receives exactly 16 images.
-    usable_micro_batches = (
-        total_micro_batches
-        - (
-            total_micro_batches
-            % accumulation_steps
-        )
-    )
-
+    # 2 GPU:
+    #   batch/GPU 4 × accumulation 2 × world 2 = global 16
+    #
+    # A partial final accumulation window is discarded so that
+    # every optimizer update uses the configured global batch.
     total_optimizer_steps = (
-        usable_micro_batches
+        total_micro_batches
         // accumulation_steps
-    )
-
-    optimizer.zero_grad(
-        set_to_none=True
     )
 
     progress = None
@@ -518,17 +495,12 @@ def train_one_epoch(
             desc=f"Epoch {epoch + 1:02d}",
             file=sys.stdout,
             disable=False,
-
-            # Fixed width is more reliable through
-            # docker logs -f than dynamic terminal probing.
             dynamic_ncols=False,
             ncols=150,
-
             leave=True,
             mininterval=1.0,
             maxinterval=5.0,
             smoothing=0.1,
-
             bar_format=(
                 "{desc}: "
                 "{percentage:6.2f}%|{bar}| "
@@ -538,89 +510,178 @@ def train_one_epoch(
             ),
         )
 
-    micro_in_window = 0
-    last_total_loss = None
-    last_loss_value = None
-
-    for micro_batch_index, (
-        samples,
-        targets,
-    ) in enumerate(
+    iterator = iter(
         data.train_loader
-    ):
-        if (
-            micro_batch_index
-            >= usable_micro_batches
-        ):
+    )
+
+    while True:
+        # ---------------------------------------------------------
+        # IMPORTANT
+        #
+        # We intentionally look at the entire accumulation window
+        # before any forward/backward pass.
+        #
+        # DINO normalizes detection loss by the number of target
+        # boxes. With gradient accumulation, normalizing every
+        # micro-batch independently would NOT be equivalent to a
+        # global batch of 16 when object counts differ.
+        #
+        # The K CPU batches are therefore temporarily held here so
+        # we can compute one common num_boxes value for the virtual
+        # global batch.
+        # ---------------------------------------------------------
+        window = list(
+            islice(
+                iterator,
+                accumulation_steps,
+            )
+        )
+
+        if not window:
             break
 
-        micro_in_window += 1
+        # Do not optimize an undersized final virtual batch.
+        if len(window) != accumulation_steps:
+            break
 
-        final_micro = (
-            micro_in_window
-            == accumulation_steps
+        window_size = len(window)
+
+        # Count all GT objects for this rank across the complete
+        # accumulation window while the targets are still on CPU.
+        local_boxes = sum(
+            len(target["labels"])
+            for _, targets in window
+            for target in targets
         )
 
-        next_global_step = (
-            global_step + 1
+        global_boxes = torch.tensor(
+            float(local_boxes),
+            dtype=torch.float32,
+            device=context.device,
         )
 
-        diagnostics = (
-            final_micro
-            and config.method
-            == "bqr_dn_v2"
+        # Sum object counts from every DDP rank.
+        all_reduce_sum(
+            global_boxes,
+            context,
+        )
+
+        # SetCriterion expects the average number of target boxes
+        # per "rank".
+        #
+        # Here the accumulation micro-batches are treated as
+        # virtual ranks:
+        #
+        # denominator = world_size × accumulation_steps
+        #
+        # Combined with:
+        #
+        #   loss / window_size
+        #
+        # and DDP's world-size gradient averaging, the final
+        # gradient is normalized by the total number of objects in
+        # the effective global batch.
+        num_boxes = torch.clamp(
+            global_boxes
+            / (
+                context.world_size
+                * window_size
+            ),
+            min=1.0,
+        )
+
+        optimizer.zero_grad(
+            set_to_none=True
+        )
+
+        # Track non-finite loss across every micro-batch in this
+        # optimizer window.
+        local_nonfinite = torch.zeros(
+            (),
+            dtype=torch.int32,
+            device=context.device,
+        )
+
+        window_loss_sum = torch.zeros(
+            (),
+            dtype=torch.float32,
+            device=context.device,
+        )
+
+        diagnostics_for_step = (
+            config.method == "bqr_dn_v2"
             and config.diagnostics_every > 0
             and (
-                next_global_step
+                (global_step + 1)
                 % config.diagnostics_every
                 == 0
             )
         )
 
-        unwrap_model(
-            model
-        ).set_diagnostics_enabled(
-            diagnostics
-        )
-
-        # Batch is moved immediately after DataLoader yields it.
-        # There is no accumulation-window list buffering.
-        samples, targets = move_batch(
+        for micro_index, (
             samples,
             targets,
-            context.device,
-        )
-
-        if (
-            isinstance(
-                model,
-                DistributedDataParallel,
-            )
-            and not final_micro
-        ):
-            sync_context = (
-                model.no_sync()
-            )
-        else:
-            sync_context = (
-                nullcontext()
+        ) in enumerate(window):
+            final_micro = (
+                micro_index + 1
+                == window_size
             )
 
-        with sync_context:
-            # Match official DINO AMP structure:
-            # forward + criterion stay in the autocast region.
-            with _autocast(
-                config,
+            # BQR diagnostics are needed only once per optimizer
+            # step, on the final micro-batch.
+            diagnostics = (
+                final_micro
+                and diagnostics_for_step
+            )
+
+            unwrap_model(
+                model
+            ).set_diagnostics_enabled(
+                diagnostics
+            )
+
+            samples, targets = move_batch(
+                samples,
+                targets,
                 context.device,
+            )
+
+            if (
+                isinstance(
+                    model,
+                    DistributedDataParallel,
+                )
+                and not final_micro
             ):
-                outputs = model(
-                    samples,
-                    targets,
+                sync_context = (
+                    model.no_sync()
+                )
+            else:
+                sync_context = (
+                    nullcontext()
                 )
 
+            with sync_context:
+                # Model forward uses configured AMP.
+                with _autocast(
+                    config,
+                    context.device,
+                ):
+                    outputs = model(
+                        samples,
+                        targets,
+                    )
+
+                # Matcher / criterion run on FP32 detector outputs.
+                #
+                # This also preserves the previously validated
+                # behavior of the project rather than changing
+                # Hungarian matching numerics when enabling BF16.
                 losses = criterion(
-                    outputs,
+                    _float_tree(outputs),
                     targets,
+                    num_boxes_override=
+                        num_boxes,
                 )
 
                 total_loss = _weighted_loss(
@@ -628,50 +689,98 @@ def train_one_epoch(
                     losses,
                 )
 
-            last_total_loss = (
-                total_loss
+                local_nonfinite = (
+                    torch.maximum(
+                        local_nonfinite,
+                        (
+                            ~torch.isfinite(
+                                total_loss.detach()
+                            )
+                        ).to(
+                            dtype=torch.int32
+                        ),
+                    )
+                )
+
+                # Used only for occasional tqdm reporting.
+                # Detached, so no graph is retained.
+                window_loss_sum = (
+                    window_loss_sum
+                    + total_loss.detach().float()
+                )
+
+                backward_loss = (
+                    total_loss
+                    / window_size
+                )
+
+                scaler.scale(
+                    backward_loss
+                ).backward()
+
+            accumulator.add(
+                _selected_loss_metrics(
+                    losses,
+                    criterion,
+                    total_loss,
+                )
             )
 
-            backward_loss = (
-                total_loss
-                / accumulation_steps
+            if diagnostics:
+                diagnostic_values = (
+                    unwrap_model(
+                        model
+                    ).training_diagnostics()
+                )
+
+                accumulator.add_sums(
+                    {
+                        f"diag_{name}":
+                            value
+                        for name, value
+                        in diagnostic_values.items()
+                    }
+                )
+
+            # Explicitly release references to large decoder output
+            # structures before the next micro-batch.
+            del backward_loss
+            del total_loss
+            del losses
+            del outputs
+            del samples
+            del targets
+
+        # ---------------------------------------------------------
+        # NON-FINITE CHECK
+        #
+        # Must happen BEFORE optimizer.step().
+        #
+        # The previous optimized engine only checked the displayed
+        # loss every 50 steps, which could allow NaN/Inf updates to
+        # continue for dozens of steps.
+        # ---------------------------------------------------------
+        bad = local_nonfinite
+
+        if context.distributed:
+            torch.distributed.all_reduce(
+                bad,
+                op=torch.distributed.ReduceOp.MAX,
             )
 
-            scaler.scale(
-                backward_loss
-            ).backward()
-
-        accumulator.add(
-            _selected_loss_metrics(
-                losses,
-                criterion,
-                total_loss,
-            )
-        )
-
-        if diagnostics:
-            diagnostic_values = (
-                unwrap_model(
-                    model
-                ).training_diagnostics()
+        if bad.item():
+            optimizer.zero_grad(
+                set_to_none=True
             )
 
-            accumulator.add_sums(
-                {
-                    f"diag_{name}":
-                        value
-                    for name, value
-                    in diagnostic_values.items()
-                }
+            if progress is not None:
+                progress.close()
+
+            raise FloatingPointError(
+                "Non-finite loss detected at "
+                f"epoch {epoch + 1}, "
+                f"optimizer step {global_step + 1}"
             )
-
-        # Drop references to large decoder output structures ASAP.
-        del outputs
-        del losses
-        del backward_loss
-
-        if not final_micro:
-            continue
 
         if scaler.is_enabled():
             scaler.unscale_(
@@ -720,41 +829,29 @@ def train_one_epoch(
             }
         )
 
-        micro_in_window = 0
-
-        # Progress itself updates every optimizer window.
         if progress is not None:
             progress.update(1)
 
-        # Only synchronize for scalar loss reporting every 50
-        # optimizer updates. No .item() on every iteration.
+        # Displaying a scalar requires a GPU->CPU synchronization,
+        # so tqdm statistics are refreshed only occasionally.
+        #
+        # The correctness/non-finite check above is independent
+        # from this reporting interval.
         should_refresh_stats = (
-            optimizer_steps == 1
+            global_step == 1
             or (
-                optimizer_steps > 0
-                and optimizer_steps % 50 == 0
+                global_step > 0
+                and global_step % 50 == 0
             )
         )
 
-        if (
-            should_refresh_stats
-            and last_total_loss is not None
-        ):
-            last_loss_value = float(
-                last_total_loss.detach()
+        if should_refresh_stats:
+            mean_window_loss = float(
+                (
+                    window_loss_sum
+                    / window_size
+                ).detach()
             )
-
-            if not math.isfinite(
-                last_loss_value
-            ):
-                if progress is not None:
-                    progress.close()
-
-                raise FloatingPointError(
-                    "Non-finite loss detected at "
-                    f"epoch {epoch + 1}, "
-                    f"step {global_step}"
-                )
 
             if context.device.type == "cuda":
                 memory_gb = (
@@ -777,7 +874,7 @@ def train_one_epoch(
             if progress is not None:
                 postfix = {
                     "loss":
-                        f"{last_loss_value:.3f}",
+                        f"{mean_window_loss:.3f}",
                     "lr":
                         f"{optimizer.param_groups[0]['lr']:.2e}",
                     "step":
@@ -789,15 +886,11 @@ def train_one_epoch(
                 }
 
                 if scaler.is_enabled():
-                    postfix[
-                        "scale"
-                    ] = (
+                    postfix["scale"] = (
                         f"{scaler.get_scale():.0f}"
                     )
 
-                    postfix[
-                        "skips"
-                    ] = (
+                    postfix["skips"] = (
                         skipped_steps
                     )
 
@@ -806,11 +899,16 @@ def train_one_epoch(
                     refresh=True,
                 )
 
+        del local_nonfinite
+        del window_loss_sum
+        del num_boxes
+        del global_boxes
+        del window
+
     if progress is not None:
         progress.close()
 
     if context.device.type == "cuda":
-        # Epoch-end timing boundary.
         torch.cuda.synchronize(
             context.device
         )
