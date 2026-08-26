@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 
 from gt_guided_dino.upstream import ensure_dqr_v3_imports
 
@@ -8,6 +9,7 @@ from gt_guided_dino.upstream import ensure_dqr_v3_imports
 ensure_dqr_v3_imports()
 from dqr_v3.model import BQRV3DecoderBridge  # noqa: E402
 from dqr_v3.query_fusion import ScaleAwareRegionGuidedDNFusion  # noqa: E402
+from dqr_v3.region_sampler import MultiScaleRegionSampler  # noqa: E402
 
 
 def _module(*, scale_aware: bool = True, scale_weight: float = 1.0):
@@ -46,6 +48,87 @@ def _fusion_inputs():
         valid_ratios,
         size_ids,
     )
+
+
+def _per_query_sample_reference(
+    memory,
+    spatial_shapes,
+    level_start_index,
+    valid_ratios,
+    batch_indices,
+    points,
+):
+    samples = []
+    hidden_dim = memory.shape[-1]
+    for level in range(len(spatial_shapes)):
+        height, width = spatial_shapes[level].tolist()
+        start = int(level_start_index[level])
+        level_map = memory[:, start : start + height * width].reshape(
+            memory.shape[0], height, width, hidden_dim
+        ).permute(0, 3, 1, 2)
+        object_maps = level_map[batch_indices]
+        grid = points[:, level] * valid_ratios[batch_indices, level, None, :]
+        grid = grid.mul(2.0).sub(1.0).reshape(
+            len(batch_indices), 1, points.shape[2], 2
+        )
+        sampled = F.grid_sample(
+            object_maps,
+            grid,
+            mode="bilinear",
+            padding_mode="zeros",
+            align_corners=False,
+        )
+        samples.append(sampled.squeeze(2).transpose(1, 2))
+    return torch.stack(samples, dim=1)
+
+
+def test_region_sampler_batches_grids_without_repeating_feature_maps(monkeypatch):
+    torch.manual_seed(7)
+    batch_size, hidden_dim, points_per_level = 4, 3, 5
+    spatial_shapes = torch.tensor([[3, 4], [2, 2], [1, 2], [1, 1]])
+    level_sizes = spatial_shapes.prod(dim=1)
+    level_start_index = torch.cat(
+        (torch.zeros(1, dtype=torch.long), level_sizes.cumsum(0)[:-1])
+    )
+    memory = torch.randn(batch_size, int(level_sizes.sum()), hidden_dim)
+    valid_ratios = torch.rand(batch_size, 4, 2) * 0.4 + 0.6
+    # Deliberately ungrouped, uneven, and with image 1 having no active query.
+    batch_indices = torch.tensor([2, 0, 3, 2, 0, 2])
+    points = torch.rand(len(batch_indices), 4, points_per_level, 2)
+
+    expected = _per_query_sample_reference(
+        memory,
+        spatial_shapes,
+        level_start_index,
+        valid_ratios,
+        batch_indices,
+        points,
+    )
+
+    import dqr_v3.region_sampler as region_sampler_module
+
+    original_grid_sample = region_sampler_module.F.grid_sample
+    input_batch_sizes = []
+    grid_shapes = []
+
+    def capture_shapes(input_map, grid, **kwargs):
+        input_batch_sizes.append(input_map.shape[0])
+        grid_shapes.append(tuple(grid.shape))
+        return original_grid_sample(input_map, grid, **kwargs)
+
+    monkeypatch.setattr(region_sampler_module.F, "grid_sample", capture_shapes)
+    actual = MultiScaleRegionSampler(hidden_dim, 4, points_per_level)(
+        memory,
+        spatial_shapes,
+        level_start_index,
+        valid_ratios,
+        batch_indices,
+        points,
+    )
+
+    assert torch.allclose(actual, expected, atol=1e-6, rtol=1e-5)
+    assert input_batch_sizes == [batch_size] * 4
+    assert grid_shapes == [(batch_size, 3, points_per_level, 2)] * 4
 
 
 def test_five_point_initialization_is_center_plus_corners():
