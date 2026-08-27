@@ -8,7 +8,8 @@ shared decoder. `bqr_dn_v2_1` retains V2 and makes its region attention depend
 on both the DN query and the actually sampled encoder features. Inference uses
 the normal DINO path for every method. `bqr_dn_v3` instead extends V2 with a
 learnable centre-plus-corners five-point pattern and a geometric scale-aware
-prior over the unchanged four encoder levels.
+prior over the unchanged four encoder levels. `bqr_dn_v3_1` keeps V3 intact
+except for reducing the scale-prior multiplier from 1.0 to 0.5.
 
 ## Environment
 
@@ -31,6 +32,7 @@ installed, the model automatically uses the differentiable PyTorch fallback.
 - `notebooks/01-1_trainV2.ipynb`: train or resume BQR-DN V2.
 - `notebooks/01-2_train.ipynb`: train or resume content-aware BQR-DN V2.1.
 - `notebooks/01-3_train.ipynb`: train or resume scale-aware five-point BQR-DN V3.
+- `notebooks/01-4.ipynb`: train or resume BQR-DN V3.1 with scale weight 0.5.
 - `notebooks/02_evaluate.ipynb`: VOC2007 11-point mAP@0.5 evaluation and plots.
 - `notebooks/03_compare.ipynb`: compare AP/AP50/AP75, object-size AP/AR,
   per-class AP, loss curves and run cost.
@@ -38,9 +40,9 @@ installed, the model automatically uses the differentiable PyTorch fallback.
   localization comparison (matched IoU/GIoU, L1, centre and size errors).
 
 The method keys accepted by the shared Python pipeline are `baseline`,
-`gt_guided_aux`, `bqr_dn_v2`, `bqr_dn_v2_1`, and `bqr_dn_v3`. BQR-DN
-implementations live under their matching `dqr-v*` directories; V3 checkpoints
-are written to `artifacts/bqr_dn_v3/seed_42`.
+`gt_guided_aux`, `bqr_dn_v2`, `bqr_dn_v2_1`, `bqr_dn_v3`, and `bqr_dn_v3_1`.
+BQR-DN implementations live under their matching `dqr-v*` directories; V3.1
+checkpoints are written to `artifacts/bqr_dn_v3_1/seed_42`.
 
 The default recipe uses 1,000 deterministic images from the official VOC2007
 train split, the full 2,510-image validation split, 12 epochs, and an LR drop at

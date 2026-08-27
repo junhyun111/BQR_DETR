@@ -9,6 +9,7 @@ UPSTREAM_ROOT = PROJECT_ROOT / "third_party" / "dino"
 DQR_V2_ROOT = PROJECT_ROOT / "dqr-v2"
 DQR_V2_1_ROOT = PROJECT_ROOT / "dqr-v2.1"
 DQR_V3_ROOT = PROJECT_ROOT / "dqr-v3"
+DQR_V3_1_ROOT = PROJECT_ROOT / "dqr-v3_1"
 
 
 def ensure_upstream_imports() -> Path:
@@ -53,3 +54,16 @@ def ensure_dqr_v3_imports() -> Path:
     if path not in sys.path:
         sys.path.insert(0, path)
     return DQR_V3_ROOT
+
+
+def ensure_dqr_v3_1_imports() -> Path:
+    # V3.1 intentionally changes only the configured scale-prior weight and
+    # therefore shares the V3 implementation.
+    ensure_dqr_v3_imports()
+    marker = DQR_V3_1_ROOT / "dqr_v3_1" / "model.py"
+    if not marker.is_file():
+        raise RuntimeError(f"Missing BQR-DN V3.1 package: {DQR_V3_1_ROOT}")
+    path = str(DQR_V3_1_ROOT)
+    if path not in sys.path:
+        sys.path.insert(0, path)
+    return DQR_V3_1_ROOT

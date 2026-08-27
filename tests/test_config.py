@@ -46,8 +46,17 @@ def test_bqr_dn_v3_recipe_is_four_scale_and_five_point():
     assert config.bqr_scale_aware
     assert config.bqr_target_cells == 4.0
     assert config.bqr_scale_sigma == 0.8
-    assert config.bqr_scale_weight == 1.0
+    assert config.bqr_scale_weight == 0.5
     assert config.bqr_scale_logit_floor == -4.0
+
+
+def test_bqr_dn_v3_1_uses_weaker_scale_prior_in_an_isolated_run():
+    config = smoke_config(method="bqr_dn_v3_1")
+    assert config.method == "bqr_dn_v3_1"
+    assert config.run_dir.name == "seed_42"
+    assert config.run_dir.parent.name == "bqr_dn_v3_1"
+    assert config.bqr_points_per_level == 5
+    assert config.bqr_scale_weight == 0.5
 
 
 def test_bqr_dn_v3_rejects_non_five_point_configuration():

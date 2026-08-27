@@ -11,6 +11,7 @@ from .config import ExperimentConfig
 from .upstream import (
     ensure_dqr_v2_1_imports,
     ensure_dqr_v2_imports,
+    ensure_dqr_v3_1_imports,
     ensure_dqr_v3_imports,
     ensure_upstream_imports,
 )
@@ -249,6 +250,16 @@ class ResearchModel(nn.Module):
             with torch.random.fork_rng(devices=cuda_devices):
                 torch.manual_seed(config.seed + 2_000_003)
                 self.bqr_bridge = attach_bqr_dn_v3(detector, config)
+        elif config.method == "bqr_dn_v3_1":
+            ensure_dqr_v3_1_imports()
+            from dqr_v3_1 import attach_bqr_dn_v3_1
+
+            cuda_devices = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+            # Keep initialization identical to V3; only the scale-prior
+            # multiplier differs through the experiment configuration.
+            with torch.random.fork_rng(devices=cuda_devices):
+                torch.manual_seed(config.seed + 2_000_003)
+                self.bqr_bridge = attach_bqr_dn_v3_1(detector, config)
 
     def _capture_encoder(self, module, args, kwargs, output) -> None:
         del module, args
