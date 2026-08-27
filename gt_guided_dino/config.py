@@ -15,8 +15,8 @@ from .upstream import PROJECT_ROOT, UPSTREAM_ROOT, ensure_upstream_imports
 
 
 Method = Literal[
-    "baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1", "bqr_dn_v3",
-    "bqr_dn_v3_1",
+    "baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1", "bqr_dn_v2_2",
+    "bqr_dn_v3", "bqr_dn_v3_1",
 ]
 Precision = Literal["fp32", "fp16", "bf16"]
 VOC_CLASSES = (
@@ -81,6 +81,7 @@ class ExperimentConfig:
     # V2/V2.1 resolve this to 4, while V3 resolves it to 5.
     bqr_points_per_level: int | None = None
     bqr_gate_bias: float = -2.0
+    bqr_fusion_weight: float = 1.0
 
     # BQR-DN V2.1 adds sampled-feature-aware attention to the V2 prior.
     bqr_content_attention: bool = True
@@ -105,9 +106,11 @@ class ExperimentConfig:
                 "bqr_points_per_level",
                 5 if self.method in ("bqr_dn_v3", "bqr_dn_v3_1") else 4,
             )
+        if self.method == "bqr_dn_v2_2":
+            object.__setattr__(self, "bqr_fusion_weight", 0.5)
         if self.method not in (
-            "baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1", "bqr_dn_v3",
-            "bqr_dn_v3_1",
+            "baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1", "bqr_dn_v2_2",
+            "bqr_dn_v3", "bqr_dn_v3_1",
         ):
             raise ValueError(f"Unknown method: {self.method}")
         if self.precision not in ("fp32", "fp16", "bf16"):
@@ -139,6 +142,8 @@ class ExperimentConfig:
             raise ValueError("bqr_content_scale_init must be strictly between 0 and 1")
         if self.bqr_scale_weight < 0:
             raise ValueError("bqr_scale_weight must be non-negative")
+        if self.bqr_fusion_weight < 0:
+            raise ValueError("bqr_fusion_weight must be non-negative")
         if self.bqr_scale_logit_floor > 0:
             raise ValueError("bqr_scale_logit_floor must be non-positive")
         if self.method in ("bqr_dn_v3", "bqr_dn_v3_1"):

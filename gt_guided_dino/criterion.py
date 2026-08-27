@@ -20,7 +20,8 @@ class ResearchCriterion(nn.Module):
             )
         elif (
             config.method in (
-                "bqr_dn_v2", "bqr_dn_v2_1", "bqr_dn_v3", "bqr_dn_v3_1"
+                "bqr_dn_v2", "bqr_dn_v2_1", "bqr_dn_v2_2", "bqr_dn_v3",
+                "bqr_dn_v3_1",
             )
             and config.bqr_dn_weight != 1.0
         ):

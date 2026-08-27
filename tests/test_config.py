@@ -38,6 +38,14 @@ def test_bqr_dn_v2_1_recipe_is_valid():
     assert config.bqr_attention_temperature == 1.0
 
 
+def test_bqr_dn_v2_2_uses_half_strength_fusion_in_an_isolated_run():
+    config = smoke_config(method="bqr_dn_v2_2")
+    assert config.method == "bqr_dn_v2_2"
+    assert config.run_dir.parent.name == "bqr_dn_v2_2"
+    assert config.bqr_points_per_level == 4
+    assert config.bqr_fusion_weight == 0.5
+
+
 def test_bqr_dn_v3_recipe_is_four_scale_and_five_point():
     config = smoke_config(method="bqr_dn_v3")
     assert config.method == "bqr_dn_v3"
