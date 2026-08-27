@@ -11,6 +11,7 @@ from .config import ExperimentConfig
 from .upstream import (
     ensure_dqr_v2_1_imports,
     ensure_dqr_v2_2_imports,
+    ensure_dqr_v2_3_imports,
     ensure_dqr_v2_imports,
     ensure_dqr_v3_1_imports,
     ensure_dqr_v3_imports,
@@ -252,6 +253,16 @@ class ResearchModel(nn.Module):
             with torch.random.fork_rng(devices=cuda_devices):
                 torch.manual_seed(config.seed + 2_000_003)
                 self.bqr_bridge = attach_bqr_dn_v2_2(detector, config)
+        elif config.method == "bqr_dn_v2_3":
+            ensure_dqr_v2_3_imports()
+            from dqr_v2_3 import attach_bqr_dn_v2_3
+
+            cuda_devices = [torch.cuda.current_device()] if torch.cuda.is_available() else []
+            # Keep initialization bit-identical to V2; only the deterministic
+            # per-query residual norm cap is added after the original gate.
+            with torch.random.fork_rng(devices=cuda_devices):
+                torch.manual_seed(config.seed + 2_000_003)
+                self.bqr_bridge = attach_bqr_dn_v2_3(detector, config)
         elif config.method == "bqr_dn_v3":
             ensure_dqr_v3_imports()
             from dqr_v3 import attach_bqr_dn_v3

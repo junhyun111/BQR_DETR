@@ -7,7 +7,9 @@ official noisy DN query content with noisy-box region evidence before the
 shared decoder. `bqr_dn_v2_1` retains V2 and makes its region attention depend
 on both the DN query and the actually sampled encoder features. Inference uses
 the normal DINO path for every method. `bqr_dn_v2_2` is a clean V2 ablation
-that halves only the final gated residual fusion strength. `bqr_dn_v3` instead extends V2 with a
+that halves only the final gated residual fusion strength. `bqr_dn_v2_3`
+instead caps each final BQR correction at half of its original DN-query norm.
+`bqr_dn_v3` instead extends V2 with a
 learnable centre-plus-corners five-point pattern and a geometric scale-aware
 prior over the unchanged four encoder levels. `bqr_dn_v3_1` keeps V3 intact
 except for reducing the scale-prior multiplier from 1.0 to 0.5.
@@ -35,6 +37,7 @@ installed, the model automatically uses the differentiable PyTorch fallback.
 - `notebooks/01-3_train.ipynb`: train or resume scale-aware five-point BQR-DN V3.
 - `notebooks/01-4.ipynb`: train or resume BQR-DN V3.1 with scale weight 0.5.
 - `notebooks/01-5_train.ipynb`: train or resume BQR-DN V2.2 with fusion weight 0.5.
+- `notebooks/01-6_trian.ipynb`: train or resume norm-constrained BQR-DN V2.3.
 - `notebooks/02_evaluate.ipynb`: VOC2007 11-point mAP@0.5 evaluation and plots.
 - `notebooks/03_compare.ipynb`: compare AP/AP50/AP75, object-size AP/AR,
   per-class AP, loss curves and run cost.
@@ -42,8 +45,8 @@ installed, the model automatically uses the differentiable PyTorch fallback.
   localization comparison (matched IoU/GIoU, L1, centre and size errors).
 
 The method keys accepted by the shared Python pipeline are `baseline`,
-`gt_guided_aux`, `bqr_dn_v2`, `bqr_dn_v2_1`, `bqr_dn_v2_2`, `bqr_dn_v3`, and
-`bqr_dn_v3_1`.
+`gt_guided_aux`, `bqr_dn_v2`, `bqr_dn_v2_1`, `bqr_dn_v2_2`, `bqr_dn_v2_3`,
+`bqr_dn_v3`, and `bqr_dn_v3_1`.
 BQR-DN implementations live under their matching `dqr-v*` directories; V3.1
 checkpoints are written to `artifacts/bqr_dn_v3_1/seed_42`.
 

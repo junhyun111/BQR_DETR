@@ -16,7 +16,7 @@ from .upstream import PROJECT_ROOT, UPSTREAM_ROOT, ensure_upstream_imports
 
 Method = Literal[
     "baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1", "bqr_dn_v2_2",
-    "bqr_dn_v3", "bqr_dn_v3_1",
+    "bqr_dn_v2_3", "bqr_dn_v3", "bqr_dn_v3_1",
 ]
 Precision = Literal["fp32", "fp16", "bf16"]
 VOC_CLASSES = (
@@ -82,6 +82,7 @@ class ExperimentConfig:
     bqr_points_per_level: int | None = None
     bqr_gate_bias: float = -2.0
     bqr_fusion_weight: float = 1.0
+    bqr_residual_ratio: float = 0.5
 
     # BQR-DN V2.1 adds sampled-feature-aware attention to the V2 prior.
     bqr_content_attention: bool = True
@@ -108,9 +109,11 @@ class ExperimentConfig:
             )
         if self.method == "bqr_dn_v2_2":
             object.__setattr__(self, "bqr_fusion_weight", 0.5)
+        if self.method == "bqr_dn_v2_3":
+            object.__setattr__(self, "bqr_residual_ratio", 0.5)
         if self.method not in (
             "baseline", "gt_guided_aux", "bqr_dn_v2", "bqr_dn_v2_1", "bqr_dn_v2_2",
-            "bqr_dn_v3", "bqr_dn_v3_1",
+            "bqr_dn_v2_3", "bqr_dn_v3", "bqr_dn_v3_1",
         ):
             raise ValueError(f"Unknown method: {self.method}")
         if self.precision not in ("fp32", "fp16", "bf16"):
@@ -126,6 +129,7 @@ class ExperimentConfig:
             "sampling_points_per_level": self.sampling_points_per_level,
             "bqr_points_per_level": self.bqr_points_per_level,
             "bqr_dn_weight": self.bqr_dn_weight,
+            "bqr_residual_ratio": self.bqr_residual_ratio,
             "bqr_attention_dim": self.bqr_attention_dim,
             "bqr_attention_temperature": self.bqr_attention_temperature,
             "bqr_target_cells": self.bqr_target_cells,

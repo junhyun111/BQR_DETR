@@ -134,6 +134,8 @@ def train(
             "aux_gate_mean", "aux_offset_abs_mean", "aux_attention_entropy",
             "loss_ce_dn", "loss_bbox_dn", "loss_giou_dn",
             "bqr_valid_queries", "bqr_gate_mean", "bqr_effective_gate_mean",
+            "bqr_query_norm", "bqr_projected_norm", "bqr_raw_delta_norm",
+            "bqr_raw_delta_ratio", "bqr_final_delta_ratio", "bqr_clip_rate",
             "bqr_offset_abs_mean",
             "bqr_attention_entropy", "bqr_region_norm", "bqr_fusion_delta_norm",
             "bqr_content_scale", "bqr_prior_entropy", "bqr_final_entropy",
