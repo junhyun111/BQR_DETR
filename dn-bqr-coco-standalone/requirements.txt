@@ -1,0 +1,14 @@
+addict==2.4.0
+cython>=3.0,<4
+matplotlib>=3.8,<3.9
+ninja>=1.11,<2
+numpy>=1.24,<2
+Pillow>=10,<12
+pycocotools>=2.0.7,<3
+pytest>=8,<9
+scipy>=1.10,<2
+termcolor>=2.4,<4
+timm>=0.9.12,<1.1
+torchvision==0.16.2
+tqdm>=4.66,<5
+yapf==0.40.1

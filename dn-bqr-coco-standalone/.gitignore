@@ -1,0 +1,9 @@
+.env
+artifacts/
+data/
+torch-cache/
+.pytest_cache/
+.pytest-tmp/
+**/__pycache__/
+*.py[cod]
+
